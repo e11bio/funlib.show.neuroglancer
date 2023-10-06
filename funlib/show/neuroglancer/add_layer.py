@@ -2,7 +2,7 @@ from .scale_pyramid import ScalePyramid
 import neuroglancer
 
 
-rgb_shader_code = '''
+rgb_shader_code = """
 void main() {
     emitRGB(
         %f*vec3(
@@ -10,23 +10,23 @@ void main() {
             toNormalized(getDataValue(%i)),
             toNormalized(getDataValue(%i)))
         );
-}'''
+}"""
 
-color_shader_code = '''
+color_shader_code = """
 void main() {
     emitRGBA(
         vec4(
         %f, %f, %f,
         toNormalized(getDataValue()))
         );
-}'''
+}"""
 
-binary_shader_code = '''
+binary_shader_code = """
 void main() {
   emitGrayscale(255.0*toNormalized(getDataValue()));
-}'''
+}"""
 
-heatmap_shader_code = '''
+heatmap_shader_code = """
 void main() {
     float v = toNormalized(getDataValue(0));
     vec4 rgba = vec4(0,0,0,0);
@@ -34,11 +34,51 @@ void main() {
         rgba = vec4(colormapJet(v), 1.0);
     }
     emitRGBA(rgba);
-}'''
+}"""
+
+
+def create_additive_shader(num_channels):
+    slider_controls = "#uicontrol float total slider(default=1, min=0, max=5, step=0.1)"
+    r_terms, g_terms, b_terms = [], [], []
+
+    for i in range(num_channels):
+        slider_controls += (
+            "\n#uicontrol float channel_"
+            + str(i)
+            + " slider(default=1, min=0, max=5, step=0.1)"
+        )
+
+        term = "channel_" + str(i) + " * toNormalized(getDataValue(" + str(i) + "))"
+        if i % 3 == 0:
+            r_terms.append(term)
+        elif i % 3 == 1:
+            g_terms.append(term)
+        else:
+            b_terms.append(term)
+
+    r_sum = " + ".join(r_terms)
+    g_sum = " + ".join(g_terms)
+    b_sum = " + ".join(b_terms)
+
+    shader_code = """
+{}
+void main() {{
+    emitRGB(
+        total * vec3(
+            {},
+            {},
+            {}
+        )
+    );
+}}
+""".format(
+        slider_controls, r_sum, g_sum, b_sum
+    )
+
+    return shader_code
 
 
 def parse_dims(array):
-
     if type(array) == list:
         array = array[0]
 
@@ -54,7 +94,6 @@ def parse_dims(array):
 
 
 def create_coordinate_space(array, spatial_dim_names, channel_dim_names, unit):
-
     dims, spatial_dims, channel_dims = parse_dims(array)
     assert spatial_dims > 0
 
@@ -71,65 +110,71 @@ def create_coordinate_space(array, spatial_dim_names, channel_dim_names, unit):
     print("Units    :", units)
     print("Scales   :", scales)
 
-    return neuroglancer.CoordinateSpace(
-        names=names,
-        units=units,
-        scales=scales)
+    return neuroglancer.CoordinateSpace(names=names, units=units, scales=scales)
 
 
 def create_shader_code(
-        shader,
-        channel_dims,
-        rgb_channels=None,
-        color=None,
-        scale_factor=1.0):
-
+    shader,
+    channel_dims,
+    rgb_channels=None,
+    color=None,
+    scale_factor=1.0,
+    num_channels=None,
+):
     if shader is None:
         if channel_dims > 1:
-            shader = 'rgb'
+            shader = "rgb"
         else:
             return None
 
     if rgb_channels is None:
         rgb_channels = [0, 1, 2]
 
-    if shader == 'rgb':
+    if shader == "rgb":
         return rgb_shader_code % (
             scale_factor,
             rgb_channels[0],
             rgb_channels[1],
-            rgb_channels[2])
+            rgb_channels[2],
+        )
 
-    if shader == 'color':
-        assert color is not None, \
-            "You have to pass argument 'color' to use the color shader"
+    if shader == "color":
+        assert (
+            color is not None
+        ), "You have to pass argument 'color' to use the color shader"
         return color_shader_code % (
             color[0],
             color[1],
             color[2],
         )
 
-    if shader == 'binary':
+    if shader == "binary":
         return binary_shader_code
 
-    if shader == 'heatmap':
+    if shader == "heatmap":
         return heatmap_shader_code
+
+    if shader == "add":
+        assert (
+            num_channels is not None
+        ), "Num channels must be passed if using additive shader"
+        return create_additive_shader(num_channels)
 
 
 def add_layer(
-        context,
-        array,
-        name,
-        spatial_dim_names=None,
-        channel_dim_names=None,
-        opacity=None,
-        shader=None,
-        rgb_channels=None,
-        color=None,
-        visible=True,
-        value_scale_factor=1.0,
-        units='nm'):
-
+    context,
+    array,
+    name,
+    spatial_dim_names=None,
+    channel_dim_names=None,
+    opacity=None,
+    shader=None,
+    rgb_channels=None,
+    color=None,
+    visible=True,
+    value_scale_factor=1.0,
+    units="nm",
+):
     """Add a layer to a neuroglancer context.
 
     Args:
@@ -177,6 +222,8 @@ def add_layer(
                             ``color``.
                 'binary' :  Shows a binary image as black/white.
                 'heatmap':  Shows an intensity image as a jet color map.
+                'add':  Dynamically adds channels and renders as rgb. Adds
+                    invlerp sliders to adjust brightness
 
         rgb_channels:
 
@@ -213,41 +260,32 @@ def add_layer(
     dims, spatial_dims, channel_dims = parse_dims(array)
 
     if is_multiscale:
-
         dimensions = []
         for a in array:
             dimensions.append(
-                create_coordinate_space(
-                    a,
-                    spatial_dim_names,
-                    channel_dim_names,
-                    units))
+                create_coordinate_space(a, spatial_dim_names, channel_dim_names, units)
+            )
 
         # why only one offset, shouldn't that be a list?
-        voxel_offset = [0] * channel_dims + \
-            list(array[0].roi.offset / array[0].voxel_size)
+        voxel_offset = [0] * channel_dims + list(
+            array[0].roi.offset / array[0].voxel_size
+        )
 
         layer = ScalePyramid(
             [
                 neuroglancer.LocalVolume(
-                    data=a.data,
-                    voxel_offset=voxel_offset,
-                    dimensions=array_dims
+                    data=a.data, voxel_offset=voxel_offset, dimensions=array_dims
                 )
                 for a, array_dims in zip(array, dimensions)
             ]
         )
 
     else:
-
-        voxel_offset = [0] * channel_dims + \
-                list(array.roi.offset / array.voxel_size)
+        voxel_offset = [0] * channel_dims + list(array.roi.offset / array.voxel_size)
 
         dimensions = create_coordinate_space(
-            array,
-            spatial_dim_names,
-            channel_dim_names,
-            units)
+            array, spatial_dim_names, channel_dim_names, units
+        )
 
         layer = neuroglancer.LocalVolume(
             data=array.data,
@@ -255,37 +293,34 @@ def add_layer(
             dimensions=dimensions,
         )
 
+    num_channels = array.shape[0] if shader == "add" else None
+
     shader_code = create_shader_code(
         shader,
         channel_dims,
         rgb_channels,
         color,
-        value_scale_factor)
+        value_scale_factor,
+        num_channels=num_channels,
+    )
 
     if opacity is not None:
         if shader_code is None:
             context.layers.append(
-                name=name,
-                layer=layer,
-                visible=visible,
-                opacity=opacity)
+                name=name, layer=layer, visible=visible, opacity=opacity
+            )
         else:
             context.layers.append(
                 name=name,
                 layer=layer,
                 visible=visible,
                 shader=shader_code,
-                opacity=opacity)
+                opacity=opacity,
+            )
     else:
         if shader_code is None:
-            context.layers.append(
-                name=name,
-                layer=layer,
-                visible=visible)
+            context.layers.append(name=name, layer=layer, visible=visible)
         else:
             context.layers.append(
-                name=name,
-                layer=layer,
-                visible=visible,
-                shader=shader_code)
-
+                name=name, layer=layer, visible=visible, shader=shader_code
+            )
