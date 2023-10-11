@@ -1,5 +1,7 @@
 from .scale_pyramid import ScalePyramid
+from funlib.geometry import Coordinate
 import neuroglancer
+import random
 
 
 rgb_shader_code = """
@@ -35,6 +37,14 @@ void main() {
     }
     emitRGBA(rgba);
 }"""
+
+
+def generate_random_color():
+    lower_bound = 0.5  # to prevent dim colors
+    r = random.uniform(lower_bound, 1.0)
+    g = random.uniform(lower_bound, 1.0)
+    b = random.uniform(lower_bound, 1.0)
+    return f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
 
 
 def create_additive_shader(num_channels):
@@ -93,7 +103,9 @@ def parse_dims(array):
     return dims, spatial_dims, channel_dims
 
 
-def create_coordinate_space(array, spatial_dim_names, channel_dim_names, unit):
+def create_coordinate_space(
+    array, spatial_dim_names, channel_dim_names, unit, voxel_size
+):
     dims, spatial_dims, channel_dims = parse_dims(array)
     assert spatial_dims > 0
 
@@ -104,7 +116,8 @@ def create_coordinate_space(array, spatial_dim_names, channel_dim_names, unit):
     spatial_names = spatial_dim_names[-spatial_dims:]
     names = channel_names + spatial_names
     units = [""] * channel_dims + [unit] * spatial_dims
-    scales = [1] * channel_dims + list(array.voxel_size)
+
+    scales = [1] * channel_dims + voxel_size
 
     print("Names    :", names)
     print("Units    :", units)
@@ -160,6 +173,20 @@ def create_shader_code(
         ), "Num channels must be passed if using additive shader"
         return create_additive_shader(num_channels)
 
+    if shader == "random_color":
+        random_color_css = generate_random_color()
+        random_color_shader = f"""
+#uicontrol vec3 color color(default="{random_color_css}")
+#uicontrol float brightness slider(min=-1, max=1)
+#uicontrol float contrast slider(min=-3, max=3, step=0.01)
+void main() {{
+  emitRGB(color *
+          (255.0*toNormalized(getDataValue(0)) + brightness) *
+          exp(contrast));
+}}
+"""
+        return random_color_shader
+
 
 def add_layer(
     context,
@@ -174,6 +201,8 @@ def add_layer(
     visible=True,
     value_scale_factor=1.0,
     units="nm",
+    volume_type=None,
+    voxel_size=None,
 ):
     """Add a layer to a neuroglancer context.
 
@@ -224,6 +253,8 @@ def add_layer(
                 'heatmap':  Shows an intensity image as a jet color map.
                 'add':  Dynamically adds channels and renders as rgb. Adds
                     invlerp sliders to adjust brightness
+                'random_color': A random color between 0.5 and 1. Adds invlerp
+                    sliders for brightness and contrast
 
         rgb_channels:
 
@@ -245,6 +276,22 @@ def add_layer(
         units:
 
             The units used for resolution and offset.
+
+        volume_type:
+
+            An optional string defining the volume type. Should be one of "None, image",
+            "segmentation". Defaults to None, and volume type is set based on
+            array data type. Can be useful to override in some cases, for
+            example if you have raw image data that is stored at 16 bit but
+            don't want it rendered as a segmentation layer
+
+        voxel_size:
+
+            An optional list of ints denoting the voxel size to use. Defaults to
+            None and voxel size is determined based on the array data voxel
+            size. This can be useful if no voxel size is added to the zarr meta
+            data in which case it defaults to 1 * spatial dims, unless
+            overridden. If this is set then it assumes non multiscale data.
     """
 
     if channel_dim_names is None:
@@ -255,7 +302,7 @@ def add_layer(
     if rgb_channels is None:
         rgb_channels = [0, 1, 2]
 
-    is_multiscale = type(array) == list
+    is_multiscale = False if voxel_size else type(array) == list
 
     dims, spatial_dims, channel_dims = parse_dims(array)
 
@@ -274,23 +321,30 @@ def add_layer(
         layer = ScalePyramid(
             [
                 neuroglancer.LocalVolume(
-                    data=a.data, voxel_offset=voxel_offset, dimensions=array_dims
+                    data=a.data,
+                    voxel_offset=voxel_offset,
+                    dimensions=array_dims,
+                    volume_type=volume_type,
                 )
                 for a, array_dims in zip(array, dimensions)
             ]
         )
 
     else:
-        voxel_offset = [0] * channel_dims + list(array.roi.offset / array.voxel_size)
+        voxel_size = array.voxel_size if voxel_size is None else voxel_size
+        voxel_offset = [0] * channel_dims + list(
+            array.roi.offset / Coordinate(voxel_size)
+        )
 
         dimensions = create_coordinate_space(
-            array, spatial_dim_names, channel_dim_names, units
+            array, spatial_dim_names, channel_dim_names, units, list(voxel_size)
         )
 
         layer = neuroglancer.LocalVolume(
             data=array.data,
             voxel_offset=voxel_offset,
             dimensions=dimensions,
+            volume_type=volume_type,
         )
 
     num_channels = array.shape[0] if shader == "add" else None

@@ -59,6 +59,16 @@ parser.add_argument(
     action="append",
     help="Shaders to use for each dataset",
 )
+parser.add_argument(
+    "--volume_types",
+    "-vt",
+    type=str,
+    nargs="+",
+    default=None,
+    action="append",
+    help="Volume types to use for each dataset",
+)
+parser.add_argument("--voxel_size", "-vs", type=str, default=None)
 
 args = parser.parse_args()
 
@@ -157,7 +167,39 @@ def open_dataset(f, ds):
         return [([open_ds(f, f"{ds}/{key}") for key in zarr.open(f)[ds].keys()], ds)]
 
 
-for f, datasets, shaders in zip(args.file, args.datasets, args.shaders):
+def process_args(length_datasets, comparison_arg):
+    length_comp = len(comparison_arg[0])
+
+    if length_comp != length_datasets:
+        if length_comp == 1:
+            comparison_arg[0] = [comparison_arg[0][0]] * length_datasets
+        else:
+            raise Exception(
+                "Must either pass a shader for each dataset or 1 shader for all datasets"
+            )
+
+    return comparison_arg
+
+
+datasets, shaders, volume_types = (
+    args.datasets,
+    args.shaders,
+    args.volume_types,
+)
+
+length_datasets = len(datasets[0])
+
+shaders = process_args(length_datasets, shaders)
+volume_types = process_args(length_datasets, volume_types)
+
+if args.voxel_size is not None:
+    vs = [int(v) for v in args.voxel_size.split(",")]
+else:
+    vs = None
+
+for f, datasets, shaders, volume_types in zip(
+    args.file, args.datasets, args.shaders, args.volume_types
+):
     arrays = []
 
     for ds in datasets:
@@ -179,15 +221,17 @@ for f, datasets, shaders in zip(args.file, args.datasets, args.shaders):
             arrays.append(a)
 
     with viewer.txn() as s:
-        for (array, dataset), shader in zip(arrays, shaders):
+        for (array, dataset), shader, vt in zip(arrays, shaders, volume_types):
             if shader is not None:
                 print(array, dataset, shader)
                 try:
-                    add_layer(s, array, dataset, shader=shader)
+                    add_layer(
+                        s, array, dataset, shader=shader, volume_type=vt, voxel_size=vs
+                    )
                 except:
-                    add_layer(s, array, dataset)
+                    add_layer(s, array, dataset, volume_type=vt, voxel_size=vs)
             else:
-                add_layer(s, array, dataset)
+                add_layer(s, array, dataset, volume_type=vt, voxel_size=vs)
 
 if args.graphs:
     for f, graphs in zip(args.file, args.graphs):
