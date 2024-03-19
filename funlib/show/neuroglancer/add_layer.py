@@ -310,7 +310,9 @@ def add_layer(
         dimensions = []
         for a in array:
             dimensions.append(
-                create_coordinate_space(a, spatial_dim_names, channel_dim_names, units)
+                create_coordinate_space(
+                    a, spatial_dim_names, channel_dim_names, units, list(a.voxel_size)
+                )
             )
 
         # why only one offset, shouldn't that be a list?
@@ -347,7 +349,13 @@ def add_layer(
             volume_type=volume_type,
         )
 
-    num_channels = array.shape[0] if shader == "add" else None
+    num_channels = (
+        array[0].shape[0]
+        if isinstance(array, (list, tuple))
+        else array.shape[0]
+        if shader == "add"
+        else None
+    )
 
     shader_code = create_shader_code(
         shader,

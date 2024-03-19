@@ -17,11 +17,10 @@ class ScalePyramid(neuroglancer.LocalVolume):
             volume_layers (``list`` of ``LocalVolume``):
 
                 One ``LocalVolume`` per provided resolution.
+
     """
 
     def __init__(self, volume_layers):
-        volume_layers = volume_layers
-
         super(neuroglancer.LocalVolume, self).__init__()
 
         logger.debug("Creating scale pyramid...")
@@ -57,9 +56,7 @@ class ScalePyramid(neuroglancer.LocalVolume):
         return self.volume_layers[(1,) * self.dims].token
 
     def info(self):
-
         reference_layer = self.volume_layers[(1,) * self.dims]
-        # return reference_layer.info()
 
         reference_info = reference_layer.info()
 
@@ -88,9 +85,17 @@ class ScalePyramid(neuroglancer.LocalVolume):
 
         scale = tuple(int(s) for s in scale_key.split(","))
 
-        return self.volume_layers[scale].get_encoded_subvolume(
-            data_format, start, end, scale_key=",".join(("1",) * self.dims)
-        )
+        try:
+            return self.volume_layers[scale].get_encoded_subvolume(
+                data_format, start, end, scale_key=",".join(("1",) * self.dims)
+            )
+        except KeyError as e:
+            logger.debug(f"Ignoring KeyError for scale {scale}: {e}")
+
+            default_data = b"{}"  # empty JSON object as bytes
+            default_content_type = "application/json"
+
+            return default_data, default_content_type
 
     def get_object_mesh(self, object_id):
         return self.volume_layers[(1,) * self.dims].get_object_mesh(object_id)
