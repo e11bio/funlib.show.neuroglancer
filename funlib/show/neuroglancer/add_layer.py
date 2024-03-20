@@ -47,15 +47,39 @@ def generate_random_color():
     return f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
 
 
-def create_additive_shader(num_channels):
-    slider_controls = "#uicontrol float total slider(default=1, min=0, max=5, step=0.1)"
-    r_terms, g_terms, b_terms = [], [], []
+def create_additive_shader(
+    num_channels,
+    shuffle=False,
+    total_default=1.0,
+    total_min=0.5,
+    total_max=2.5,
+    channel_default=1.0,
+    channel_min=0.5,
+    channel_max=2.5,
+):
+    slider_controls = (
+        "#uicontrol float total slider(default={}, min={}, max={}, step=0.1)".format(
+            total_default, total_min, total_max
+        )
+    )
 
-    for i in range(num_channels):
+    r_terms, g_terms, b_terms = [], [], []
+    channel_indices = list(range(num_channels))
+
+    if shuffle:
+        random.shuffle(channel_indices)
+
+    for i in channel_indices:
+        default_value = (
+            random.uniform(channel_min, channel_max) if shuffle else channel_default
+        )
+
         slider_controls += (
             "\n#uicontrol float channel_"
             + str(i)
-            + " slider(default=1, min=0, max=5, step=0.1)"
+            + " slider(default={}, min={}, max={}, step=0.1)".format(
+                default_value, channel_min, channel_max
+            )
         )
 
         term = "channel_" + str(i) + " * toNormalized(getDataValue(" + str(i) + "))"
