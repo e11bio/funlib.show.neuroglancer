@@ -47,7 +47,40 @@ def generate_random_color():
     return f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
 
 
-def create_additive_shader(
+def combined_additive_shader(num_channels, scale=0.5):
+    pos_bias = (float(num_channels) + 1.0) / float(num_channels)
+
+    shader = f"""
+#define NUM_CHANNELS {num_channels}
+
+#uicontrol float pos_bias slider(default={pos_bias}, min=0, max=5, step=0.1)
+
+void main() {{
+    vec3 transform[NUM_CHANNELS / 3];
+    for (int i = 0; i < NUM_CHANNELS / 3; ++i) {{
+        transform[i] = vec3(0.5, 0.5, 0.5); // Default transformation
+    }}
+    transform[0] = vec3(1.0, 0.0, 0.0);
+    transform[1] = vec3(0.0, 1.0, 0.0);
+    transform[2] = vec3(0.0, 0.0, 1.0);
+
+    vec3 color = vec3(0.0, 0.0, 0.0);
+
+    for (int i = 0; i < NUM_CHANNELS; ++i) {{
+        float channelValue = pos_bias * (toNormalized(getDataValue(i)) - {scale});
+        color.r += channelValue * transform[i / 3].r;
+        color.g += channelValue * transform[i / 3].g;
+        color.b += channelValue * transform[i / 3].b;
+    }}
+
+    emitRGB(color);
+}}
+"""
+
+    return shader
+
+
+def additive_shader(
     num_channels,
     shuffle=False,
     total_default=1.0,
@@ -195,7 +228,13 @@ def create_shader_code(
         assert (
             num_channels is not None
         ), "Num channels must be passed if using additive shader"
-        return create_additive_shader(num_channels)
+        return additive_shader(num_channels)
+
+    if shader == "cadd":
+        assert (
+            num_channels is not None
+        ), "Num channels must be passed if using additive shader"
+        return combined_additive_shader(num_channels)
 
     if shader == "random_color":
         random_color_css = generate_random_color()
@@ -277,6 +316,8 @@ def add_layer(
                 'heatmap':  Shows an intensity image as a jet color map.
                 'add':  Dynamically adds channels and renders as rgb. Adds
                     invlerp sliders to adjust brightness
+                'cadd':  Dynamically adds channels and renders as rgb. Adds
+                    single slider to adjust bias
                 'random_color': A random color between 0.5 and 1. Adds invlerp
                     sliders for brightness and contrast
 
@@ -328,6 +369,8 @@ def add_layer(
 
     is_multiscale = False if voxel_size else type(array) == list
 
+    print(is_multiscale)
+
     dims, spatial_dims, channel_dims = parse_dims(array)
 
     if is_multiscale:
@@ -377,7 +420,7 @@ def add_layer(
         array[0].shape[0]
         if isinstance(array, (list, tuple))
         else array.shape[0]
-        if shader == "add"
+        if "add" in shader
         else None
     )
 
