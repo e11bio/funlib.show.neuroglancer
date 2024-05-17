@@ -369,8 +369,6 @@ def add_layer(
 
     is_multiscale = False if voxel_size else type(array) == list
 
-    print(is_multiscale)
-
     dims, spatial_dims, channel_dims = parse_dims(array)
 
     if is_multiscale:
@@ -419,9 +417,7 @@ def add_layer(
     num_channels = (
         array[0].shape[0]
         if isinstance(array, (list, tuple))
-        else array.shape[0]
-        if "add" in shader
-        else None
+        else array.shape[0] if "add" in shader else None
     )
 
     shader_code = create_shader_code(

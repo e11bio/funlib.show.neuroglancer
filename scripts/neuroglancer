@@ -135,7 +135,9 @@ def open_dataset(f, ds):
 
     try:
         dataset_as = []
-        if all(key.startswith("s") for key in zarr.open(f)[ds].keys()):
+        if all(
+            key.startswith("s") or key.startswith("") for key in zarr.open(f)[ds].keys()
+        ):
             raise AttributeError("This group is a multiscale array!")
         for key in zarr.open(f)[ds].keys():
             dataset_as.extend(open_dataset(f, f"{ds}/{key}{slices_str}"))
