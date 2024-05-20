@@ -145,6 +145,115 @@ void main() {{
     return shader_code
 
 
+def create_shuffle_shader(
+    num_channels, slider_default_min=0.0, slider_default_max=0.03
+):
+    assert (
+        num_channels >= 3
+    ), f"Data must be at least three dimensional, got {num_channels} channels!"
+
+    shader = []
+
+    # ui controls for each channel
+    for i in range(num_channels):
+        shader.extend(
+            [
+                f"#uicontrol bool chan{i}_active checkbox(default=true)",
+                f"#uicontrol float chan{i}_min slider(min=0, max=1, step=0.001, default={slider_default_min})",
+                f"#uicontrol float chan{i}_max slider(min=0, max=1, step=0.001, default={slider_default_max})",
+            ]
+        )
+
+    # extra controls
+    shader.extend(
+        [
+            "#uicontrol float contrast slider(min=-3, max=3, step=0.01, default=0)",
+            "#uicontrol float brightness slider(min=-3, max=3, step=0.01, default=0)",
+            "#uicontrol float scaleR slider(min=-3, max=3, step=0.01, default=1)",
+            "#uicontrol float scaleG slider(min=-3, max=3, step=0.01, default=1)",
+            "#uicontrol float scaleB slider(min=-3, max=3, step=0.01, default=1)",
+            "#uicontrol float seed slider(min=0, max=20, step=1, default=1)",
+        ]
+    )
+
+    # helper functions for display range and random shuffling
+    shader.extend(
+        [
+            "float disp_range(float im, float min, float max) {",
+            "    return clamp((im - min) / (max - min), 0.0, 1.0);",
+            "}",
+            "float rand(float x) {",
+            "    return fract(sin(dot(vec2(x, seed), vec2(12.9898, 78.233))) * 43758.5453);",
+            "}",
+            f"vec3[{num_channels}] shuffleBoolArray(vec3 arr[{num_channels}], int n) {{",
+            "    vec3[] output_arr = vec3[]("
+            + ", ".join([f"arr[{i}]" for i in range(num_channels)])
+            + ");",
+            "    if (seed == 0.) {",
+            "        return output_arr;",
+            "    }",
+            "    for (int i = n - 1; i > 0; i--) {",
+            "        int j = int(rand(float(i)) * float(i + 1));",
+            "        vec3 temp = output_arr[i];",
+            "        output_arr[i] = output_arr[j];",
+            "        output_arr[j] = temp;",
+            "    }",
+            "    return output_arr;",
+            "}",
+        ]
+    )
+
+    # base color pattern
+    color_pattern = ["vec3(1, 0, 0)", "vec3(0, 1, 0)", "vec3(0, 0, 1)"]
+
+    # repeat pattern for extra channels
+    extended_colors = (color_pattern * ((num_channels + 2) // 3))[:num_channels]
+
+    # convert to string
+    temp_colors = ", ".join(extended_colors)
+
+    # add to glsl
+    temp_colors_definition = (
+        f"vec3 temp_colors[{num_channels}] = vec3[]({temp_colors});"
+    )
+
+    # main logic
+    shader.extend(
+        [
+            "void main() {",
+            "    vec3 colorSum = vec3(0.0);",
+            f"    float channelData[{num_channels}] = float[]("
+            + ", ".join(
+                [f"toNormalized(getDataValue({i}))" for i in range(num_channels)]
+            )
+            + ");",
+            f"    float minVals[{num_channels}] = float[]("
+            + ", ".join([f"chan{i}_min" for i in range(num_channels)])
+            + ");",
+            f"    float maxVals[{num_channels}] = float[]("
+            + ", ".join([f"chan{i}_max" for i in range(num_channels)])
+            + ");",
+            f"    bool active_chans[{num_channels}] = bool[]("
+            + ", ".join([f"chan{i}_active" for i in range(num_channels)])
+            + ");",
+            f"    {temp_colors_definition}",
+            f"    vec3[{num_channels}] colors = shuffleBoolArray(temp_colors, {num_channels});",
+            f"    for (int i = 0; i < {num_channels}; i++) {{",
+            "        if (active_chans[i]) {",
+            "            colorSum += colors[i] * disp_range(channelData[i], minVals[i], maxVals[i]);",
+            "        }",
+            "    }",
+            "    vec3 final_im = vec3(colorSum.r * scaleR, colorSum.g * scaleG, colorSum.b * scaleB);",
+            "    final_im = clamp(final_im, 0.0, 1.0);",
+            "    final_im = (final_im - 0.5) * pow(2.0, contrast) + 0.5 + brightness;",
+            "    emitRGB(final_im);",
+            "}",
+        ]
+    )
+
+    return "\n".join(shader)
+
+
 def parse_dims(array):
     if type(array) == list:
         array = array[0]
@@ -191,6 +300,7 @@ def create_shader_code(
     scale_factor=1.0,
     num_channels=None,
 ):
+
     if shader is None:
         if channel_dims > 1:
             shader = "rgb"
@@ -235,6 +345,12 @@ def create_shader_code(
             num_channels is not None
         ), "Num channels must be passed if using additive shader"
         return combined_additive_shader(num_channels)
+
+    if shader == "shuffle":
+        assert (
+            num_channels is not None
+        ), "Num channels must be passed if using additive shader"
+        return create_shuffle_shader(num_channels)
 
     if shader == "random_color":
         random_color_css = generate_random_color()
