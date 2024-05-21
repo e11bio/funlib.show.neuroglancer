@@ -13,7 +13,7 @@ setup(
             'zarr',
             'daisy>=1.0',
             'funlib.geometry>=0.1',
-            'funlib.persistence @ git+https://github.com/funkelab/funlib.persistence'
+            'funlib.persistence @ git+https://github.com/e11bio/funlib.persistence'
         ],
         packages=[
             'funlib.show.neuroglancer'
