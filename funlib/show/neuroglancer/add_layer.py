@@ -89,7 +89,14 @@ def additive_shader(
     channel_default=1.0,
     channel_min=0.5,
     channel_max=2.5,
+    saved_defaults=None,
 ):
+
+    if saved_defaults and "total" in saved_defaults:
+        total_default = saved_defaults["total"]
+        total_min = min(total_min, total_default)
+        total_max = max(total_max, total_default)
+
     slider_controls = (
         "#uicontrol float total slider(default={}, min={}, max={}, step=0.1)".format(
             total_default, total_min, total_max
@@ -103,15 +110,28 @@ def additive_shader(
         random.shuffle(channel_indices)
 
     for i in channel_indices:
-        default_value = (
-            random.uniform(channel_min, channel_max) if shuffle else channel_default
+        # Initialize channel parameters with defaults
+        current_channel_default = channel_default
+        current_channel_min = channel_min
+        current_channel_max = channel_max
+
+        # Adjust each channel's default, min, and max based on saved values, if present
+        if saved_defaults and f"channel_{i}" in saved_defaults:
+            current_channel_default = saved_defaults[f"channel_{i}"]
+            current_channel_min = min(channel_min, current_channel_default)
+            current_channel_max = max(channel_max, current_channel_default)
+
+        current_channel_default = (
+            random.uniform(current_channel_min, current_channel_max)
+            if shuffle
+            else current_channel_default
         )
 
         slider_controls += (
             "\n#uicontrol float channel_"
             + str(i)
             + " slider(default={}, min={}, max={}, step=0.1)".format(
-                default_value, channel_min, channel_max
+                current_channel_default, current_channel_min, current_channel_max
             )
         )
 
@@ -146,7 +166,7 @@ void main() {{
 
 
 def create_shuffle_shader(
-    num_channels, slider_default_min=0.0, slider_default_max=0.03
+    num_channels, slider_default_min=0.0, slider_default_max=0.03, saved_defaults=None
 ):
     assert (
         num_channels >= 3
@@ -156,23 +176,64 @@ def create_shuffle_shader(
 
     # ui controls for each channel
     for i in range(num_channels):
+        # get saved defaults if any
+        chan_active_default = (
+            saved_defaults.get(f"chan{i}_active", True) if saved_defaults else True
+        )
+        chan_min_default = (
+            saved_defaults.get(f"chan{i}_min", slider_default_min)
+            if saved_defaults
+            else slider_default_min
+        )
+        chan_max_default = (
+            saved_defaults.get(f"chan{i}_max", slider_default_max)
+            if saved_defaults
+            else slider_default_max
+        )
+
+        # adjust min and max values if necessary
+        chan_min = min(0, chan_min_default)
+        chan_max = max(1, chan_max_default)
+
         shader.extend(
             [
-                f"#uicontrol bool chan{i}_active checkbox(default=true)",
-                f"#uicontrol float chan{i}_min slider(min=0, max=1, step=0.001, default={slider_default_min})",
-                f"#uicontrol float chan{i}_max slider(min=0, max=1, step=0.001, default={slider_default_max})",
+                f"#uicontrol bool chan{i}_active checkbox(default={str(chan_active_default).lower()})",
+                f"#uicontrol float chan{i}_min slider(min={chan_min}, max=1, step=0.001, default={chan_min_default})",
+                f"#uicontrol float chan{i}_max slider(min=0, max={chan_max}, step=0.001, default={chan_max_default})",
             ]
         )
 
-    # extra controls
+    # extra controls with checks for saved defaults
+    contrast_default = saved_defaults.get("contrast", 0) if saved_defaults else 0
+    brightness_default = saved_defaults.get("brightness", 0) if saved_defaults else 0
+    scaleR_default = saved_defaults.get("scaleR", 1) if saved_defaults else 1
+    scaleG_default = saved_defaults.get("scaleG", 1) if saved_defaults else 1
+    scaleB_default = saved_defaults.get("scaleB", 1) if saved_defaults else 1
+    seed_default = saved_defaults.get("seed", 1) if saved_defaults else 1
+
+    # dynamically adjust contrast, brightness, scaleR min/max values if necessary
+    contrast_min = min(-3, contrast_default)
+    contrast_max = max(3, contrast_default)
+    brightness_min = min(-3, brightness_default)
+    brightness_max = max(3, brightness_default)
+    scaleR_min = min(-3, scaleR_default)
+    scaleR_max = max(3, scaleR_default)
+    scaleG_min = min(-3, scaleG_default)
+    scaleG_max = max(3, scaleG_default)
+    scaleB_min = min(-3, scaleB_default)
+    scaleB_max = max(3, scaleB_default)
+    scaleB_max = max(3, scaleB_default)
+    seed_min = min(0, seed_default)
+    seed_max = max(20, seed_default)
+
     shader.extend(
         [
-            "#uicontrol float contrast slider(min=-3, max=3, step=0.01, default=0)",
-            "#uicontrol float brightness slider(min=-3, max=3, step=0.01, default=0)",
-            "#uicontrol float scaleR slider(min=-3, max=3, step=0.01, default=1)",
-            "#uicontrol float scaleG slider(min=-3, max=3, step=0.01, default=1)",
-            "#uicontrol float scaleB slider(min=-3, max=3, step=0.01, default=1)",
-            "#uicontrol float seed slider(min=0, max=20, step=1, default=1)",
+            f"#uicontrol float contrast slider(min={contrast_min}, max={contrast_max}, step=0.01, default={contrast_default})",
+            f"#uicontrol float brightness slider(min={brightness_min}, max={brightness_max}, step=0.01, default={brightness_default})",
+            f"#uicontrol float scaleR slider(min={scaleR_min}, max={scaleR_max}, step=0.01, default={scaleR_default})",
+            f"#uicontrol float scaleG slider(min={scaleG_min}, max={scaleG_max}, step=0.01, default={scaleG_default})",
+            f"#uicontrol float scaleB slider(min={scaleB_min}, max={scaleB_max}, step=0.01, default={scaleB_default})",
+            f"#uicontrol float seed slider(min={seed_min}, max={seed_max}, step=1, default={seed_default})",
         ]
     )
 
@@ -533,7 +594,7 @@ def add_layer(
     num_channels = (
         array[0].shape[0]
         if isinstance(array, (list, tuple))
-        else array.shape[0] if "add" in shader else None
+        else array.shape[0] if shader is not None and "add" in shader else None
     )
 
     shader_code = create_shader_code(
