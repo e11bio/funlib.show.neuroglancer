@@ -84,18 +84,23 @@ class ScalePyramid(neuroglancer.LocalVolume):
             scale_key = ",".join(("1",) * self.dims)
 
         scale = tuple(int(s) for s in scale_key.split(","))
+        closest_scale = None
+        min_diff = np.inf
+        for volume_scales in self.volume_layers.keys():
+            scale_diff = np.array(scale) // np.array(volume_scales)
+            if any(scale_diff < 1):
+                continue
+            scale_diff = scale_diff.max()
+            if scale_diff < min_diff:
+                min_diff = scale_diff
+                closest_scale = volume_scales
 
-        try:
-            return self.volume_layers[scale].get_encoded_subvolume(
-                data_format, start, end, scale_key=",".join(("1",) * self.dims)
-            )
-        except KeyError as e:
-            logger.debug(f"Ignoring KeyError for scale {scale}: {e}")
+        assert closest_scale is not None
+        relative_scale = np.array(scale) // np.array(closest_scale)
 
-            default_data = b"{}"  # empty JSON object as bytes
-            default_content_type = "application/json"
-
-            return default_data, default_content_type
+        return self.volume_layers[closest_scale].get_encoded_subvolume(
+            data_format, start, end, scale_key=",".join(map(str, relative_scale))
+        )
 
     def get_object_mesh(self, object_id):
         return self.volume_layers[(1,) * self.dims].get_object_mesh(object_id)
