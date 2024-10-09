@@ -51,6 +51,15 @@ parser.add_argument(
     help="Bind address",
 )
 parser.add_argument(
+    "--port",
+    "-p",
+    type=str,
+    nargs="?",
+    default="0",
+    const=True,
+    help="Bind port",
+)
+parser.add_argument(
     "--shaders",
     "-s",
     type=str,
@@ -72,7 +81,10 @@ parser.add_argument("--voxel_size", "-vs", type=str, default=None)
 
 args = parser.parse_args()
 
-neuroglancer.set_server_bind_address(args.bind_address)
+neuroglancer.set_server_bind_address(
+    bind_address=args.bind_address, bind_port=args.port
+)
+
 viewer = neuroglancer.Viewer()
 
 
