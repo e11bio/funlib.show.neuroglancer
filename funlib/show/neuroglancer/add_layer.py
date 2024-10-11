@@ -91,7 +91,6 @@ def additive_shader(
     channel_max=2.5,
     saved_defaults=None,
 ):
-
     if saved_defaults and "total" in saved_defaults:
         total_default = saved_defaults["total"]
         total_min = min(total_min, total_default)
@@ -234,6 +233,7 @@ def create_shuffle_shader(
             f"#uicontrol float scaleG slider(min={scaleG_min}, max={scaleG_max}, step=0.01, default={scaleG_default})",
             f"#uicontrol float scaleB slider(min={scaleB_min}, max={scaleB_max}, step=0.01, default={scaleB_default})",
             f"#uicontrol float seed slider(min={seed_min}, max={seed_max}, step=1, default={seed_default})",
+            f"#uicontrol bool invert checkbox(default=false)",
         ]
     )
 
@@ -307,7 +307,7 @@ def create_shuffle_shader(
             "    vec3 final_im = vec3(colorSum.r * scaleR, colorSum.g * scaleG, colorSum.b * scaleB);",
             "    final_im = clamp(final_im, 0.0, 1.0);",
             "    final_im = (final_im - 0.5) * pow(2.0, contrast) + 0.5 + brightness;",
-            "    emitRGB(final_im);",
+            "    if (invert == true) {emitRGB(1.0-final_im);} else {emitRGB(final_im);}"
             "}",
         ]
     )
@@ -361,7 +361,6 @@ def create_shader_code(
     scale_factor=1.0,
     num_channels=None,
 ):
-
     if shader is None:
         if channel_dims > 1:
             shader = "rgb"
@@ -594,7 +593,9 @@ def add_layer(
     num_channels = (
         array[0].shape[0]
         if isinstance(array, (list, tuple))
-        else array.shape[0] if shader is not None and "add" in shader else None
+        else array.shape[0]
+        if shader is not None and "add" in shader
+        else None
     )
 
     shader_code = create_shader_code(
