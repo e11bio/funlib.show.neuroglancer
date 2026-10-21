@@ -6,7 +6,7 @@ requires = ["setuptools", "wheel"]
 name = "funlib.show.neuroglancer"
 version = "0.2"
 description = ""
-readme = "README.rst"
+readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Jan Funke", email = "funkej@janelia.hhmi.org" }]
 license = { text = "MIT" }
