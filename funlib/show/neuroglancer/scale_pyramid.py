@@ -4,7 +4,6 @@ import logging
 
 import numpy as np
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -17,10 +16,11 @@ class ScalePyramid(neuroglancer.LocalVolume):
             volume_layers (``list`` of ``LocalVolume``):
 
                 One ``LocalVolume`` per provided resolution.
-
     """
 
     def __init__(self, volume_layers):
+        volume_layers = volume_layers
+
         super(neuroglancer.LocalVolume, self).__init__()
 
         logger.debug("Creating scale pyramid...")
@@ -57,6 +57,7 @@ class ScalePyramid(neuroglancer.LocalVolume):
 
     def info(self):
         reference_layer = self.volume_layers[(1,) * self.dims]
+        # return reference_layer.info()
 
         reference_info = reference_layer.info()
 
